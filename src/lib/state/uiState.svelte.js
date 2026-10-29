@@ -3,8 +3,8 @@ let isLoading = $state(false);
 let loadingMessage = $state('');
 let errorMessage = $state('');
 let selectedDay = $state(null);
-let orsApiKey = $state('eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijg2YjVjZTY1MTc3MjQ0ZTI4ZGQ0ZjNjZGMwNTM3N2ViIiwiaCI6Im11cm11cjY0In0=');
-let anthropicApiKey = $state('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');
+let orsApiKey = $state('');
+let anthropicApiKey = $state('');
 
 export function getCurrentStep() {
   return currentStep;
