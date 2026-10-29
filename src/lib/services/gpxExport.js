@@ -1,0 +1,166 @@
+/**
+ * Escape XML special characters.
+ */
+function escapeXml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Generate a GPX 1.1 XML string from day segments.
+ * @param {Array} daySegments - Array of day segment objects
+ * @param {string} tripName - Name of the trip
+ * @returns {string} GPX XML string
+ */
+export function generateGPX(daySegments, tripName) {
+  const now = new Date().toISOString();
+
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd"
+     version="1.1"
+     creator="BikepackingPlanner">
+  <metadata>
+    <name>${escapeXml(tripName)}</name>
+    <time>${now}</time>
+  </metadata>
+`;
+
+  // Waypoints for each day's start and end
+  for (const seg of daySegments) {
+    const startLat = seg.startCoord[0];
+    const startLng = seg.startCoord[1];
+    const endLat = seg.endCoord[0];
+    const endLng = seg.endCoord[1];
+
+    gpx += `  <wpt lat="${startLat}" lon="${startLng}">
+    <name>${escapeXml(seg.startName || `Day ${seg.day} Start`)}</name>
+    <desc>Day ${seg.day} start</desc>
+  </wpt>
+`;
+
+    // Only add end waypoint for the last day (other ends are next day's start)
+    if (seg.day === daySegments.length) {
+      gpx += `  <wpt lat="${endLat}" lon="${endLng}">
+    <name>${escapeXml(seg.endName || `Day ${seg.day} End`)}</name>
+    <desc>Day ${seg.day} end - Trip finish</desc>
+  </wpt>
+`;
+    }
+  }
+
+  // Track per day
+  for (const seg of daySegments) {
+    gpx += `  <trk>
+    <name>Day ${seg.day}${seg.startName ? ': ' + escapeXml(seg.startName) : ''}${seg.endName ? ' to ' + escapeXml(seg.endName) : ''}</name>
+    <trkseg>
+`;
+
+    if (seg.geometry) {
+      for (const coord of seg.geometry) {
+        // coord is [lng, lat, ele]
+        const lng = coord[0];
+        const lat = coord[1];
+        const ele = coord.length > 2 ? coord[2] : null;
+
+        gpx += `      <trkpt lat="${lat}" lon="${lng}">`;
+        if (ele !== null) {
+          gpx += `<ele>${ele.toFixed(1)}</ele>`;
+        }
+        gpx += `</trkpt>\n`;
+      }
+    }
+
+    gpx += `    </trkseg>
+  </trk>
+`;
+  }
+
+  gpx += `</gpx>`;
+  return gpx;
+}
+
+/**
+ * Download a GPX string as a file.
+ * @param {string} gpxString - GPX XML content
+ * @param {string} filename - Download filename
+ */
+export function downloadGPX(gpxString, filename) {
+  const blob = new Blob([gpxString], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename.endsWith('.gpx') ? filename : `${filename}.gpx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Generate a readable plain-text itinerary.
+ * @param {Array} daySegments - Array of day segment objects
+ * @param {string} tripName - Name of the trip
+ * @param {string} units - 'miles' or 'km'
+ * @returns {string} Formatted text itinerary
+ */
+export function generateTextItinerary(daySegments, tripName, units = 'miles') {
+  const isMiles = units === 'miles';
+  const distUnit = isMiles ? 'mi' : 'km';
+  const eleUnit = isMiles ? 'ft' : 'm';
+
+  const convertDist = (meters) => {
+    const val = isMiles ? meters / 1609.34 : meters / 1000;
+    return val.toFixed(1);
+  };
+
+  const convertEle = (meters) => {
+    const val = isMiles ? meters * 3.28084 : meters;
+    return Math.round(val).toLocaleString();
+  };
+
+  const totalDistance = daySegments.reduce((sum, s) => sum + s.distance, 0);
+  const totalGain = daySegments.reduce((sum, s) => sum + s.elevationGain, 0);
+
+  let text = `${tripName}\n`;
+  text += `${'='.repeat(tripName.length)}\n\n`;
+  text += `Total Distance: ${convertDist(totalDistance)} ${distUnit}\n`;
+  text += `Total Elevation Gain: ${convertEle(totalGain)} ${eleUnit}\n`;
+  text += `Duration: ${daySegments.length} days\n\n`;
+  text += `${'─'.repeat(50)}\n\n`;
+
+  for (const seg of daySegments) {
+    text += `Day ${seg.day}`;
+    if (seg.startName || seg.endName) {
+      text += `: ${seg.startName || '?'} → ${seg.endName || '?'}`;
+    }
+    text += `\n`;
+
+    text += `  Distance: ${convertDist(seg.distance)} ${distUnit}\n`;
+    text += `  Elevation Gain: ${convertEle(seg.elevationGain)} ${eleUnit}\n`;
+    text += `  Elevation Loss: ${convertEle(seg.elevationLoss)} ${eleUnit}\n`;
+
+    if (seg.accommodation) {
+      text += `  Accommodation: ${seg.accommodation}\n`;
+    }
+
+    if (seg.supplyStops && seg.supplyStops.length > 0) {
+      text += `  Supply Stops:\n`;
+      for (const stop of seg.supplyStops) {
+        text += `    - ${stop.name} (${stop.type})\n`;
+      }
+    }
+
+    text += `\n`;
+  }
+
+  text += `${'─'.repeat(50)}\n`;
+  text += `Generated by Bikepacking Planner\n`;
+
+  return text;
+}
